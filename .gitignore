@@ -1,0 +1,14 @@
+**/.env*
+!**/.env.example
+
+**/node_modules/
+**/dist/
+**/coverage/
+**/.data/
+
+**/.DS_Store
+**/._*
+*.log
+npm-debug.log*
+
+/tramites-unsa/

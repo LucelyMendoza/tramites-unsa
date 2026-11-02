@@ -1,0 +1,38 @@
+# Blueprint de Render. La base de datos y el almacenamiento NO se crean aquí: usar servicios gestionados externos (ver docs/DESPLIEGUE.md).
+services:
+  - type: web
+    name: tramites-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter            # Free duerme tras 15 min de inactividad: solo para pruebas
+    healthCheckPath: /api/health
+    envVars:
+      - { key: NODE_ENV, value: production }
+      - { key: AUTH_MODE, value: firebase }
+      - { key: STORAGE_DRIVER, value: r2 }
+      - { key: MAIL_PROVIDER, value: resend }
+      - { key: ACADEMIC_DIRECTORY, value: none }
+      - { key: DEV_TEST_ACCOUNTS_ENABLED, value: "false" }
+      - { key: ALLOWED_EMAIL_DOMAINS, sync: false }
+      - { key: APP_URL, sync: false }
+      - { key: CORS_ORIGINS, sync: false }
+      - { key: DATABASE_URL, sync: false }
+      - { key: FIREBASE_PROJECT_ID, sync: false }
+      - { key: FIREBASE_SERVICE_ACCOUNT_JSON, sync: false }
+      - { key: R2_ACCOUNT_ID, sync: false }
+      - { key: R2_ACCESS_KEY_ID, sync: false }
+      - { key: R2_SECRET_ACCESS_KEY, sync: false }
+      - { key: R2_BUCKET, sync: false }
+      - { key: RESEND_API_KEY, sync: false }
+      - { key: MAIL_FROM, sync: false }
+      - { key: BOOTSTRAP_SUPERADMINS, sync: false }
+  - type: cron
+    name: tramites-retention
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    schedule: "30 7 * * *"
+    dockerCommand: node dist/scripts/retention.js
+    envVars:
+      - { fromService: { type: web, name: tramites-api, envVarKey: DATABASE_URL }, key: DATABASE_URL }

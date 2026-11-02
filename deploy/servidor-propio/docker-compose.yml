@@ -1,0 +1,79 @@
+# Despliegue en un servidor propio (on-premise) con Docker Compose.
+# Servicios: PostgreSQL + API (Node) + web (nginx: frontend estático, proxy /api y TLS).
+# Uso:  cp .env.example .env  →  editar  →  docker compose up -d --build
+# Guía completa: docs/GUIA_DESPLIEGUE.md (Escenario B).
+name: tramites
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tramites
+      POSTGRES_USER: tramites
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Defina DB_PASSWORD en .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tramites -d tramites"]
+      interval: 10s
+      retries: 6
+    # Sin puertos publicados: solo la API llega a la base de datos (red interna de Docker).
+
+  api:
+    build: ../../backend
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      DATABASE_URL: postgres://tramites:${DB_PASSWORD}@db:5432/tramites?sslmode=disable
+      STORAGE_DRIVER: disk
+      DISK_STORAGE_DIR: /data/archivos
+      AUTH_MODE: firebase
+      DEV_TEST_ACCOUNTS_ENABLED: "false"
+    volumes:
+      - archivos:/data/archivos
+    # Sin puertos publicados: nginx la expone en /api.
+
+  retention:
+    build: ../../backend
+    restart: "no"
+    profiles: ["tareas"]          # se ejecuta desde cron: docker compose run --rm retention
+    depends_on: [db]
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://tramites:${DB_PASSWORD}@db:5432/tramites?sslmode=disable
+      STORAGE_DRIVER: disk
+      DISK_STORAGE_DIR: /data/archivos
+      AUTH_MODE: firebase
+      DEV_TEST_ACCOUNTS_ENABLED: "false"
+    volumes:
+      - archivos:/data/archivos
+    command: ["node", "dist/scripts/retention.js"]
+
+  web:
+    build:
+      context: ../../frontend
+      dockerfile: ../deploy/servidor-propio/Dockerfile.web
+      args:
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID}
+        VITE_HOSTED_DOMAIN: ${VITE_HOSTED_DOMAIN:-unsa.edu.pe}
+    restart: unless-stopped
+    depends_on: [api]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${TLS_DIR:-./tls}:/etc/nginx/tls:ro     # fullchain.pem + privkey.pem (certificado institucional o Let's Encrypt)
+
+volumes:
+  db-data:
+  archivos:
